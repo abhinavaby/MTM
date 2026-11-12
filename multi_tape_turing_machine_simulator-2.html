@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Tape Turing Machine Workstation</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Custom dark scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .tape-cell {
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    @keyframes pulseWrite {
+      0% {
+        transform: scale(1.14);
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.45);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+
+    .cell-just-written {
+      animation: pulseWrite 0.45s ease-out;
+    }
+
+    @keyframes headBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+
+    .head-indicator {
+      animation: headBounce 1.8s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
+
+  <!-- Top Navigation & Mode Tabs -->
+  <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30 shadow-lg shadow-black/20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 font-mono font-bold text-lg shrink-0">
+          TMₖ
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold text-white tracking-tight">
+              Multi-Tape Turing Machine Simulator
+            </h1>
+            <span id="tapeCountPill" class="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+              3-Tape Model
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">
+            Interactive Read / Write / Head Shift &amp; State Transition Visualizer
+          </p>
+        </div>
+      </div>
+
+      <!-- 5 Algorithm Mode Selector Tabs -->
+      <nav class="flex flex-wrap items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1" aria-label="Algorithm Modes">
+        <button
+          id="tab-binary"
+          onclick="switchMode('binary')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-indigo-600 text-white shadow-sm"
+        >
+          1. Binary Addition
+        </button>
+        <button
+          id="tab-unary"
+          onclick="switchMode('unary')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        >
+          2. Unary Addition
+        </button>
+        <button
+          id="tab-palindrome"
+          onclick="switchMode('palindrome')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        >
+          3. Palindrome Check
+        </button>
+        <button
+          id="tab-compare"
+          onclick="switchMode('compare')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        >
+          4. String Compare
+        </button>
+        <button
+          id="tab-copy"
+          onclick="switchMode('copy')"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+        >
+          5. String Copy
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- Dynamic Input & Preset Configuration Card -->
+    <section class="bg-slate-900 rounded-2xl border border-slate-800 p-4 sm:p-5 shadow-lg shadow-black/20">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+
+        <!-- Tape 1 Input Field -->
+        <div id="input1Wrapper" class="lg:col-span-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <label id="labelInput1" for="inputField1" class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Tape 1 (Binary A)
+            </label>
+            <span id="metaInput1" class="text-xs font-mono font-medium text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-md">
+              = 11
+            </span>
+          </div>
+          <input
+            id="inputField1"
+            type="text"
+            value="1011"
+            maxlength="12"
+            placeholder="e.g. 1011"
+            class="w-full font-mono text-sm sm:text-base font-semibold px-3.5 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-950 text-white placeholder-slate-600"
+          />
+        </div>
+
+        <!-- Operator Badge (Hidden in 1-input modes) -->
+        <div id="operatorWrapper" class="hidden lg:flex lg:col-span-1 items-center justify-center pb-2">
+          <span id="operatorSymbol" class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono font-bold flex items-center justify-center text-base">
+            +
+          </span>
+        </div>
+
+        <!-- Tape 2 Input Field (Hidden in Palindrome & String Copy modes) -->
+        <div id="input2Wrapper" class="lg:col-span-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <label id="labelInput2" for="inputField2" class="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Tape 2 (Binary B)
+            </label>
+            <span id="metaInput2" class="text-xs font-mono font-medium text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 rounded-md">
+              = 13
+            </span>
+          </div>
+          <input
+            id="inputField2"
+            type="text"
+            value="1101"
+            maxlength="12"
+            placeholder="e.g. 1101"
+            class="w-full font-mono text-sm sm:text-base font-semibold px-3.5 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-950 text-white placeholder-slate-600"
+          />
+        </div>
+
+        <!-- Target Summary, Quick Presets & Load Button -->
+        <div id="summaryWrapper" class="lg:col-span-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Presets &amp; Target</span>
+              <div id="presetButtonsContainer" class="flex flex-wrap items-center gap-1.5">
+                <!-- Quick preset pills populated dynamically -->
+              </div>
+            </div>
+            <div id="targetEquation" class="font-mono text-xs sm:text-sm font-semibold text-slate-200 truncate">
+              1011 (11) + 1101 (13) = 11000 (24)
+            </div>
+            <div id="liveOutputSummary" class="font-mono text-xs text-emerald-400 font-medium truncate">
+              Tape 3 Output: (empty)
+            </div>
+          </div>
+
+          <button
+            onclick="loadInputs()"
+            class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer shrink-0"
+          >
+            Load Tapes
+          </button>
+        </div>
+      </div>
+
+      <!-- Validation Banner -->
+      <div id="validationBanner" class="hidden mt-3 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2">
+        <svg class="w-4 h-4 shrink-0 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span id="validationMsg">Invalid input.</span>
+      </div>
+    </section>
+
+    <!-- Playback Controls, Current State & Live Head Action Readout -->
+    <section class="bg-slate-900 rounded-2xl border border-slate-800 p-4 sm:p-5 shadow-lg shadow-black/20 space-y-4">
+      <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        <!-- State Badge & Description -->
+        <div class="flex items-start sm:items-center gap-3.5">
+          <div id="stateBadge" class="px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-mono font-bold text-sm sm:text-base shadow-md shrink-0">
+            q0
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="stateTitle" class="font-bold text-white text-sm sm:text-base">q0: Scan Right to LSB</span>
+              <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                Step <span id="stepCounter">0</span>
+              </span>
+              <!-- Decision Status Badge (Accept / Reject / Running) -->
+              <span id="outcomeBadge" class="hidden text-xs font-mono font-bold px-2.5 py-0.5 rounded-full">
+                ACCEPT
+              </span>
+            </div>
+            <p id="stateDescription" class="text-xs text-slate-400 mt-0.5">
+              Scan right across Tape 1 and Tape 2 until reaching the blank symbol (_) past the least significant bit.
+            </p>
+          </div>
+        </div>
+
+        <!-- Playback Buttons & Speed Control -->
+        <div class="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+          <button
+            id="btnPlayPause"
+            onclick="togglePlay()"
+            class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-colors cursor-pointer min-w-[94px] justify-center"
+          >
+            <svg id="iconPlay" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+            </svg>
+            <svg id="iconPause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M5.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 007.25 3h-1.5zM12.75 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
+            </svg>
+            <span id="labelPlayPause">Play</span>
+          </button>
+
+          <button
+            id="btnStepForward"
+            onclick="stepForward()"
+            title="Step Forward"
+            class="px-3.5 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            Step
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <button
+            onclick="resetMachine()"
+            title="Reset Simulation"
+            class="px-3 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Reset
+          </button>
+
+          <!-- Speed Control -->
+          <div class="flex items-center gap-2 pl-2 border-l border-slate-800">
+            <label for="speedSlider" class="text-xs font-medium text-slate-400">Speed</label>
+            <input
+              id="speedSlider"
+              type="range"
+              min="1"
+              max="5"
+              value="3"
+              oninput="updateSpeed(this.value)"
+              class="w-20 accent-indigo-500 cursor-pointer"
+            />
+            <span id="speedLabel" class="text-xs font-mono font-semibold text-slate-300 w-8">1.0x</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Transition Inspector Bar -->
+      <div class="bg-slate-950 border border-slate-800/90 rounded-xl p-3.5 grid grid-cols-1 xl:grid-cols-12 gap-3 items-center font-mono text-xs">
+        <div class="xl:col-span-6 flex flex-wrap items-center gap-2">
+          <span class="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            State: <strong id="inspState" class="text-indigo-300">q0</strong>
+          </span>
+          <span class="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            Read: <strong id="inspRead" class="text-sky-300">[1, 1, _]</strong>
+          </span>
+          <span class="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            Write: <strong id="inspWrite" class="text-emerald-300">—</strong>
+          </span>
+          <span class="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            Move: <strong id="inspMove" class="text-amber-300">—</strong>
+          </span>
+          <span class="px-2 py-1 rounded-md bg-slate-900 border border-slate-800 text-slate-400">
+            Next: <strong id="inspNext" class="text-violet-300">—</strong>
+          </span>
+        </div>
+
+        <div class="xl:col-span-6 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse shrink-0"></span>
+            <span id="liveActionReadout" class="font-sans text-slate-200 font-medium truncate">
+              Ready — press Step or Play to begin execution.
+            </span>
+          </div>
+          <span id="liveHeadCoords" class="text-slate-400 shrink-0 hidden sm:inline">
+            Heads: H1[0], H2[0], H3[4]
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Tape Visualization Deck -->
+    <section class="bg-slate-900 rounded-2xl border border-slate-800 p-4 sm:p-6 shadow-lg shadow-black/20 space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm sm:text-base font-bold text-white">Synchronized Multi-Tape Tracks</h2>
+          <span id="activeTapesSubtitle" class="text-xs text-slate-400 hidden sm:inline">• 3 Independent Read/Write Heads</span>
+        </div>
+        <!-- Legend -->
+        <div class="flex flex-wrap items-center gap-3 text-xs">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-xs bg-indigo-500/20 border border-indigo-400 inline-block"></span>
+            <span class="text-slate-400">Active Head (Read)</span>
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-xs bg-emerald-500/20 border border-emerald-400 inline-block"></span>
+            <span class="text-slate-400">Written Cell</span>
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="px-1.5 py-0.2 rounded-xs bg-slate-800 border border-slate-700 font-mono text-[10px] text-slate-300">L / R / S</span>
+            <span class="text-slate-400">Head Shift</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Dynamic Tapes Container (2 or 3 tapes depending on selected algorithm) -->
+      <div id="tapesContainer" class="space-y-4">
+        <!-- Rendered dynamically by JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    /**
+     * Multi-Tape Turing Machine Workstation
+     * Supports 5 core multi-tape algorithms:
+     *  1. Binary Addition (3 tapes)
+     *  2. Unary Addition (3 tapes)
+     *  3. Palindrome Checking (2 tapes)
+     *  4. String Comparison (2 tapes)
+     *  5. String Copying (2 tapes)
+     */
+
+    const TAPE_MIN = -14;
+    const TAPE_MAX = 20;
+    const BLANK = '_';
+
+    // Mode Configurations
+    const MODE_CONFIGS = {
+      binary: {
+        tapeCount: 3,
+        inputs: 2,
+        operator: '+',
+        label1: 'Tape 1 (Binary A)',
+        label2: 'Tape 2 (Binary B)',
+        placeholder1: 'e.g. 1011',
+        placeholder2: 'e.g. 1101',
+        default1: '1011',
+        default2: '1101',
+        presets: [
+          { label: '1011 + 1101', v1: '1011', v2: '1101', badge: 'neutral' },
+          { label: '111 + 1 (Carry)', v1: '111', v2: '1', badge: 'neutral' }
+        ],
+        tapeRoles: [
+          { name: 'Tape 1', role: 'Input Operand A (Read)' },
+          { name: 'Tape 2', role: 'Input Operand B (Read)' },
+          { name: 'Tape 3', role: 'Binary Sum Accumulator (Write)' }
+        ]
+      },
+      unary: {
+        tapeCount: 3,
+        inputs: 2,
+        operator: '+',
+        label1: 'Tape 1 (Unary 1s)',
+        label2: 'Tape 2 (Unary 1s)',
+        placeholder1: 'e.g. 111',
+        placeholder2: 'e.g. 1111',
+        default1: '111',
+        default2: '1111',
+        presets: [
+          { label: '3 + 4 (111 + 1111)', v1: '111', v2: '1111', badge: 'neutral' },
+          { label: '2 + 5 (11 + 11111)', v1: '11', v2: '11111', badge: 'neutral' }
+        ],
+        tapeRoles: [
+          { name: 'Tape 1', role: 'Unary Tallies A (Read)' },
+          { name: 'Tape 2', role: 'Unary Tallies B (Read)' },
+          { name: 'Tape 3', role: 'Concatenated Sum (Write)' }
+        ]
+      },
+      palindrome: {
+        tapeCount: 2,
+        inputs: 1,
+        operator: '',
+        label1: 'Tape 1 (Candidate String)',
+        label2: '',
+        placeholder1: 'e.g. radar or abba',
+        placeholder2: '',
+        default1: 'radar',
+        default2: '',
+        presets: [
+          { label: 'radar (Accept)', v1: 'radar', v2: '', badge: 'accept' },
+          { label: 'abba (Accept)', v1: 'abba', v2: '', badge: 'accept' },
+          { label: 'robot (Reject)', v1: 'robot', v2: '', badge: 'reject' }
+        ],
+        tapeRoles: [
+          { name: 'Tape 1', role: 'Original Input String (Forward Scan)' },
+          { name: 'Tape 2', role: 'Copied Mirror Buffer (Reverse Scan)' }
+        ]
+      },
+      compare: {
+        tapeCount: 2,
+        inputs: 2,
+        operator: '==',
+        label1: 'Tape 1 (String A)',
+        label2: 'Tape 2 (String B)',
+        placeholder1: 'e.g. algo',
+        placeholder2: 'e.g. algo',
+        default1: 'algo',
+        default2: 'algo',
+        presets: [
+          { label: 'algo == algo (Accept)', v1: 'algo', v2: 'algo', badge: 'accept' },
+          { label: 'algo != data (Reject)', v1: 'algo', v2: 'data', badge: 'reject' },
+          { label: 'cat != cats (Reject)', v1: 'cat', v2: 'cats', badge: 'reject' }
+        ],
+        tapeRoles: [
+          { name: 'Tape 1', role: 'First String (Left-to-Right Scan)' },
+          { name: 'Tape 2', role: 'Second String (Left-to-Right Scan)' }
+        ]
+      },
+      copy: {
+        tapeCount: 2,
+        inputs: 1,
+        operator: '→',
+        label1: 'Tape 1 (Source String)',
+        label2: '',
+        placeholder1: 'e.g. turing',
+        placeholder2: '',
+        default1: 'turing',
+        default2: '',
+        presets: [
+          { label: 'turing', v1: 'turing', v2: '', badge: 'neutral' },
+          { label: '101101', v1: '101101', v2: '', badge: 'neutral' }
+        ],
+        tapeRoles: [
+          { name: 'Tape 1', role: 'Source String (Read)' },
+          { name: 'Tape 2', role: 'Destination Copy (Write)' }
+        ]
+      }
+    };
+
+    // Human-readable state descriptions for all 5 algorithms
+    const STATE_INFO = {
+      binary: {
+        q0: {
+          title: 'q0: Scan Right to LSB',
+          desc: 'Move Tape 1 and Tape 2 heads right until both reach the blank cell (_) past their least significant bit.',
+          badgeClass: 'bg-indigo-600 text-white'
+        },
+        q1: {
+          title: 'q1: Add Bits (Carry = 0)',
+          desc: 'Read bits from right to left with Carry = 0. Write sum bit to Tape 3 and shift all 3 heads Left (L).',
+          badgeClass: 'bg-sky-600 text-white'
+        },
+        q2: {
+          title: 'q2: Add Bits (Carry = 1)',
+          desc: 'Read bits from right to left with Carry = 1. Write sum bit to Tape 3 and shift all 3 heads Left (L).',
+          badgeClass: 'bg-amber-600 text-white'
+        },
+        q_accept: {
+          title: 'q_accept: Binary Addition Complete',
+          desc: 'All bits and final carry have been processed. Tape 3 holds the exact binary sum.',
+          badgeClass: 'bg-emerald-600 text-white'
+        }
+      },
+      unary: {
+        q0: {
+          title: 'q0: Copy Tape 1 Tallies',
+          desc: 'Scan Tape 1 left-to-right; for every "1" read, write "1" onto Tape 3 and advance both heads Right (R).',
+          badgeClass: 'bg-indigo-600 text-white'
+        },
+        q1: {
+          title: 'q1: Append Tape 2 Tallies',
+          desc: 'Tape 1 finished. Scan Tape 2 left-to-right; append every "1" onto Tape 3 and advance Right (R).',
+          badgeClass: 'bg-sky-600 text-white'
+        },
+        q_accept: {
+          title: 'q_accept: Unary Addition Complete',
+          desc: 'Both unary tally strings have been concatenated onto Tape 3.',
+          badgeClass: 'bg-emerald-600 text-white'
+        }
+      },
+      palindrome: {
+        q0: {
+          title: 'q0: Copy Input onto Tape 2',
+          desc: 'Read each character from Tape 1, write an exact copy onto Tape 2, and shift both heads Right (R).',
+          badgeClass: 'bg-indigo-600 text-white'
+        },
+        q1: {
+          title: 'q1: Rewind Tape 1 to Start',
+          desc: 'Tape 2 head stays at the end (one cell past last char). Rewind Tape 1 head Left (L) back to the start.',
+          badgeClass: 'bg-violet-600 text-white'
+        },
+        q2: {
+          title: 'q2: Compare Forward vs. Reverse',
+          desc: 'Move Tape 1 Right (R) from start and Tape 2 Left (L) from end simultaneously, verifying matching symbols.',
+          badgeClass: 'bg-sky-600 text-white'
+        },
+        q_accept: {
+          title: 'q_accept: Valid Palindrome!',
+          desc: 'Every forward symbol matched its symmetric reverse symbol up to the blank boundary.',
+          badgeClass: 'bg-emerald-600 text-white'
+        },
+        q_reject: {
+          title: 'q_reject: Not a Palindrome',
+          desc: 'Symbol mismatch detected between forward Tape 1 and reverse Tape 2.',
+          badgeClass: 'bg-rose-600 text-white'
+        }
+      },
+      compare: {
+        q0: {
+          title: 'q0: Simultaneous Symbol-by-Symbol Scan',
+          desc: 'Read Tape 1 and Tape 2 together from left to right. Advance Right (R) while symbols match.',
+          badgeClass: 'bg-indigo-600 text-white'
+        },
+        q_accept: {
+          title: 'q_accept: Strings Are Identical',
+          desc: 'Both tapes reached the blank symbol (_) simultaneously with zero mismatches.',
+          badgeClass: 'bg-emerald-600 text-white'
+        },
+        q_reject: {
+          title: 'q_reject: Strings Differ',
+          desc: 'Halted immediately upon encountering a character mismatch or unequal string length.',
+          badgeClass: 'bg-rose-600 text-white'
+        }
+      },
+      copy: {
+        q0: {
+          title: 'q0: Left-to-Right String Copy',
+          desc: 'Read each character from Tape 1, write the identical character to Tape 2, and shift both heads Right (R).',
+          badgeClass: 'bg-indigo-600 text-white'
+        },
+        q_accept: {
+          title: 'q_accept: String Copy Complete',
+          desc: 'Reached blank (_) on Tape 1. Tape 2 now contains an exact duplicate of the source string.',
+          badgeClass: 'bg-emerald-600 text-white'
+        }
+      }
+    };
+
+    // Explicit Transition Tables for All 5 Algorithms
+    const RULES_BY_MODE = {
+      binary: [
+        { id: 'b1',  state: 'q0', r: ['0|1', '0|1', '_'], next: 'q0', w: ['=', '=', '_'], m: ['R', 'R', 'S'], label: 'Advance both input heads right' },
+        { id: 'b2',  state: 'q0', r: ['0|1', '_',   '_'], next: 'q0', w: ['=', '_', '_'], m: ['R', 'S', 'S'], label: 'Advance Tape 1 head right' },
+        { id: 'b3',  state: 'q0', r: ['_',   '0|1', '_'], next: 'q0', w: ['_', '=', '_'], m: ['S', 'R', 'S'], label: 'Advance Tape 2 head right' },
+        { id: 'b4',  state: 'q0', r: ['_',   '_',   '_'], next: 'q1', w: ['_', '_', '_'], m: ['L', 'L', 'S'], label: 'Reached end; step left to LSB' },
+        // q1: Carry = 0
+        { id: 'b5',  state: 'q1', r: ['0', '0', '_'], next: 'q1', w: ['0', '0', '0'], m: ['L', 'L', 'L'], label: '0 + 0 + (c=0) = 0, carry 0' },
+        { id: 'b6',  state: 'q1', r: ['0', '_', '_'], next: 'q1', w: ['0', '_', '0'], m: ['L', 'S', 'L'], label: '0 + _ + (c=0) = 0, carry 0' },
+        { id: 'b7',  state: 'q1', r: ['_', '0', '_'], next: 'q1', w: ['_', '0', '0'], m: ['S', 'L', 'L'], label: '_ + 0 + (c=0) = 0, carry 0' },
+        { id: 'b8',  state: 'q1', r: ['0', '1', '_'], next: 'q1', w: ['0', '1', '1'], m: ['L', 'L', 'L'], label: '0 + 1 + (c=0) = 1, carry 0' },
+        { id: 'b9',  state: 'q1', r: ['1', '0', '_'], next: 'q1', w: ['1', '0', '1'], m: ['L', 'L', 'L'], label: '1 + 0 + (c=0) = 1, carry 0' },
+        { id: 'b10', state: 'q1', r: ['1', '_', '_'], next: 'q1', w: ['1', '_', '1'], m: ['L', 'S', 'L'], label: '1 + _ + (c=0) = 1, carry 0' },
+        { id: 'b11', state: 'q1', r: ['_', '1', '_'], next: 'q1', w: ['_', '1', '1'], m: ['S', 'L', 'L'], label: '_ + 1 + (c=0) = 1, carry 0' },
+        { id: 'b12', state: 'q1', r: ['1', '1', '_'], next: 'q2', w: ['1', '1', '0'], m: ['L', 'L', 'L'], label: '1 + 1 + (c=0) = 0, carry 1' },
+        { id: 'b13', state: 'q1', r: ['_', '_', '_'], next: 'q_accept', w: ['_', '_', '_'], m: ['S', 'S', 'R'], label: 'No carry left; accept sum' },
+        // q2: Carry = 1
+        { id: 'b14', state: 'q2', r: ['0', '0', '_'], next: 'q1', w: ['0', '0', '1'], m: ['L', 'L', 'L'], label: '0 + 0 + (c=1) = 1, carry 0' },
+        { id: 'b15', state: 'q2', r: ['0', '_', '_'], next: 'q1', w: ['0', '_', '1'], m: ['L', 'S', 'L'], label: '0 + _ + (c=1) = 1, carry 0' },
+        { id: 'b16', state: 'q2', r: ['_', '0', '_'], next: 'q1', w: ['_', '0', '1'], m: ['S', 'L', 'L'], label: '_ + 0 + (c=1) = 1, carry 0' },
+        { id: 'b17', state: 'q2', r: ['0', '1', '_'], next: 'q2', w: ['0', '1', '0'], m: ['L', 'L', 'L'], label: '0 + 1 + (c=1) = 0, carry 1' },
+        { id: 'b18', state: 'q2', r: ['1', '0', '_'], next: 'q2', w: ['1', '0', '0'], m: ['L', 'L', 'L'], label: '1 + 0 + (c=1) = 0, carry 1' },
+        { id: 'b19', state: 'q2', r: ['1', '_', '_'], next: 'q2', w: ['1', '_', '0'], m: ['L', 'S', 'L'], label: '1 + _ + (c=1) = 0, carry 1' },
+        { id: 'b20', state: 'q2', r: ['_', '1', '_'], next: 'q2', w: ['_', '1', '0'], m: ['S', 'L', 'L'], label: '_ + 1 + (c=1) = 0, carry 1' },
+        { id: 'b21', state: 'q2', r: ['1', '1', '_'], next: 'q2', w: ['1', '1', '1'], m: ['L', 'L', 'L'], label: '1 + 1 + (c=1) = 1, carry 1' },
+        { id: 'b22', state: 'q2', r: ['_', '_', '_'], next: 'q_accept', w: ['_', '_', '1'], m: ['S', 'S', 'S'], label: 'Write final carry 1 & accept' }
+      ],
+      unary: [
+        { id: 'u1', state: 'q0', r: ['1', '1|_', '_'], next: 'q0', w: ['1', '=', '1'], m: ['R', 'S', 'R'], label: 'Copy "1" from Tape 1 to Tape 3' },
+        { id: 'u2', state: 'q0', r: ['_', '1|_', '_'], next: 'q1', w: ['_', '=', '_'], m: ['S', 'S', 'S'], label: 'Tape 1 done; switch to Tape 2' },
+        { id: 'u3', state: 'q1', r: ['_', '1',   '_'], next: 'q1', w: ['_', '1', '1'], m: ['S', 'R', 'R'], label: 'Append "1" from Tape 2 to Tape 3' },
+        { id: 'u4', state: 'q1', r: ['_', '_',   '_'], next: 'q_accept', w: ['_', '_', '_'], m: ['S', 'S', 'L'], label: 'Tape 2 done; accept unary sum' }
+      ],
+      palindrome: [
+        { id: 'p1', state: 'q0', r: ['σ', '_'], next: 'q0',       w: ['=', 'σ'], m: ['R', 'R'], label: 'Copy symbol σ to Tape 2; move R, R' },
+        { id: 'p2', state: 'q0', r: ['_', '_'], next: 'q1',       w: ['_', '_'], m: ['L', 'S'], label: 'End of string; begin rewinding Tape 1' },
+        { id: 'p3', state: 'q1', r: ['σ', '_'], next: 'q1',       w: ['=', '_'], m: ['L', 'S'], label: 'Rewind Tape 1 left; hold Tape 2 at end' },
+        { id: 'p4', state: 'q1', r: ['_', '_'], next: 'q2',       w: ['_', '_'], m: ['R', 'L'], label: 'Position H1 at first char, H2 at last char' },
+        { id: 'p5', state: 'q2', r: ['σ', 'σ'], next: 'q2',       w: ['=', '='], m: ['R', 'L'], label: 'Match (σ == σ): advance H1→R, H2→L' },
+        { id: 'p6', state: 'q2', r: ['_', '_'], next: 'q_accept', w: ['_', '_'], m: ['S', 'S'], label: 'All symmetric pairs matched → ACCEPT' },
+        { id: 'p7', state: 'q2', r: ['σ', 'τ'], next: 'q_reject', w: ['=', '='], m: ['S', 'S'], label: 'Mismatch (σ ≠ τ) → REJECT' }
+      ],
+      compare: [
+        { id: 'c1', state: 'q0', r: ['σ', 'σ'], next: 'q0',       w: ['=', '='], m: ['R', 'R'], label: 'Symbols match (σ == σ); advance R, R' },
+        { id: 'c2', state: 'q0', r: ['_', '_'], next: 'q_accept', w: ['_', '_'], m: ['S', 'S'], label: 'Simultaneous blank reached → ACCEPT' },
+        { id: 'c3', state: 'q0', r: ['σ', 'τ'], next: 'q_reject', w: ['=', '='], m: ['S', 'S'], label: 'Symbol mismatch (σ ≠ τ) → REJECT' },
+        { id: 'c4', state: 'q0', r: ['σ', '_'], next: 'q_reject', w: ['=', '_'], m: ['S', 'S'], label: 'Tape 2 ended early (length ≠) → REJECT' },
+        { id: 'c5', state: 'q0', r: ['_', 'σ'], next: 'q_reject', w: ['_', '='], m: ['S', 'S'], label: 'Tape 1 ended early (length ≠) → REJECT' }
+      ],
+      copy: [
+        { id: 'cp1', state: 'q0', r: ['σ', '_'], next: 'q0',       w: ['=', 'σ'], m: ['R', 'R'], label: 'Read σ on Tape 1, write σ on Tape 2; move R, R' },
+        { id: 'cp2', state: 'q0', r: ['_', '_'], next: 'q_accept', w: ['_', '_'], m: ['S', 'S'], label: 'Blank reached; copy complete → ACCEPT' }
+      ]
+    };
+
+    // Global Simulation State
+    let currentMode = 'binary';
+    let input1Str = '1011';
+    let input2Str = '1101';
+    let currentSnap = null;
+    let stepCount = 0;
+    let isPlaying = false;
+    let playTimer = null;
+    let stepDelayMs = 650;
+
+    const SPEED_MAP = {
+      1: { delay: 1300, label: '0.5x' },
+      2: { delay: 900,  label: '0.75x' },
+      3: { delay: 650,  label: '1.0x' },
+      4: { delay: 350,  label: '1.8x' },
+      5: { delay: 140,  label: '4.0x' }
+    };
+
+    function isHaltedState(state) {
+      return state === 'q_accept' || state === 'q_reject';
+    }
+
+    function createEmptyTape() {
+      const tape = {};
+      for (let i = TAPE_MIN; i <= TAPE_MAX; i++) {
+        tape[i] = BLANK;
+      }
+      return tape;
+    }
+
+    function cloneSnapshot(snap) {
+      return {
+        state: snap.state,
+        tapes: snap.tapes.map(t => ({ ...t })),
+        heads: [...snap.heads],
+        lastMoves: [...snap.lastMoves],
+        writtenFlags: [...snap.writtenFlags],
+        inspector: { ...snap.inspector },
+        actionText: snap.actionText
+      };
+    }
+
+    /**
+     * Initializes the machine for the active mode and inputs
+     */
+    function initMachine() {
+      stopAutoPlay();
+      const cfg = MODE_CONFIGS[currentMode];
+      const tapeCount = cfg.tapeCount;
+
+      const tapes = Array.from({ length: tapeCount }, () => createEmptyTape());
+
+      // Populate Tape 1 starting at index 0
+      for (let i = 0; i < input1Str.length; i++) {
+        tapes[0][i] = input1Str[i];
+      }
+
+      // Populate Tape 2 if mode uses 2 input strings (Binary, Unary, String Compare)
+      if (cfg.inputs === 2) {
+        for (let i = 0; i < input2Str.length; i++) {
+          tapes[1][i] = input2Str[i];
+        }
+      }
+
+      // Initial head positions
+      const heads = Array(tapeCount).fill(0);
+      if (currentMode === 'binary') {
+        heads[2] = Math.max(input1Str.length, input2Str.length);
+      }
+
+      const initialRead = heads.map((pos, idx) => tapes[idx][pos] ?? BLANK);
+
+      currentSnap = {
+        state: 'q0',
+        tapes,
+        heads,
+        lastMoves: Array(tapeCount).fill('S'),
+        writtenFlags: Array(tapeCount).fill(false),
+        inspector: {
+          state: 'q0',
+          read: `[${initialRead.join(', ')}]`,
+          write: '—',
+          move: '—',
+          next: '—'
+        },
+        actionText: 'Initialized tapes and aligned heads at start.'
+      };
+
+      stepCount = 0;
+      renderAll();
+    }
+
+    /**
+     * Pattern matcher supporting literal symbols, disjunctions ('0|1'), and wildcards:
+     *  - 'σ' matches any non-blank symbol
+     *  - 'τ' matches any non-blank symbol distinct from r[0]
+     */
+    function matchRule(rule, state, readSymbols) {
+      if (rule.state !== state) return false;
+      for (let i = 0; i < rule.r.length; i++) {
+        const pat = rule.r[i];
+        const sym = readSymbols[i];
+        if (pat === 'σ') {
+          if (sym === BLANK) return false;
+        } else if (pat === 'τ') {
+          if (sym === BLANK || sym === readSymbols[0]) return false;
+        } else if (pat.includes('|')) {
+          if (!pat.split('|').includes(sym)) return false;
+        } else {
+          if (pat !== sym) return false;
+        }
+      }
+      return true;
+    }
+
+    function resolveWrite(writePat, readSymbols) {
+      if (writePat === '=') return null; // caller preserves own read symbol
+      if (writePat === 'σ') return readSymbols[0];
+      return writePat;
+    }
+
+    /**
+     * Computes one deterministic transition step
+     */
+    function computeNextStep(prev) {
+      if (isHaltedState(prev.state)) return null;
+
+      const rules = RULES_BY_MODE[currentMode];
+      const tapeCount = prev.tapes.length;
+      const readSymbols = prev.heads.map((pos, idx) => prev.tapes[idx][pos] ?? BLANK);
+
+      const matchedRule = rules.find(rule => matchRule(rule, prev.state, readSymbols));
+
+      if (!matchedRule) {
+        const haltSnap = cloneSnapshot(prev);
+        haltSnap.state = 'q_reject';
+        haltSnap.inspector = {
+          state: prev.state,
+          read: `[${readSymbols.join(', ')}]`,
+          write: `[${readSymbols.join(', ')}]`,
+          move: `[${Array(tapeCount).fill('S').join(', ')}]`,
+          next: 'q_reject'
+        };
+        haltSnap.actionText = `No rule matched [${readSymbols.join(', ')}] → Halted.`;
+        return haltSnap;
+      }
+
+      const next = cloneSnapshot(prev);
+      const writtenSymbols = [];
+
+      for (let i = 0; i < tapeCount; i++) {
+        const wPat = matchedRule.w[i];
+        const wSym = wPat === '=' ? readSymbols[i] : resolveWrite(wPat, readSymbols);
+        writtenSymbols.push(wSym);
+
+        // Highlight cell if symbol changed or if explicitly writing onto an output/buffer tape
+        const isWriteTape = (currentMode === 'binary' || currentMode === 'unary') ? i === 2 : (currentMode === 'palindrome' || currentMode === 'copy') ? i === 1 : false;
+        next.writtenFlags[i] = (wSym !== readSymbols[i]) || (isWriteTape && wPat !== '=' && wPat !== '_');
+
+        next.tapes[i][prev.heads[i]] = wSym;
+      }
+
+      const moveDelta = { L: -1, R: 1, S: 0 };
+      for (let i = 0; i < tapeCount; i++) {
+        const m = matchedRule.m[i];
+        next.heads[i] = Math.max(TAPE_MIN, Math.min(TAPE_MAX, prev.heads[i] + moveDelta[m]));
+        next.lastMoves[i] = m;
+      }
+
+      next.state = matchedRule.next;
+      next.inspector = {
+        state: prev.state,
+        read: `[${readSymbols.join(', ')}]`,
+        write: `[${writtenSymbols.join(', ')}]`,
+        move: `[${matchedRule.m.join(', ')}]`,
+        next: matchedRule.next
+      };
+      next.actionText = matchedRule.label;
+
+      return next;
+    }
+
+    function stepForward() {
+      if (!currentSnap || isHaltedState(currentSnap.state)) {
+        stopAutoPlay();
+        return;
+      }
+
+      const nextSnap = computeNextStep(currentSnap);
+      if (nextSnap) {
+        currentSnap = nextSnap;
+        stepCount++;
+        renderAll();
+      }
+
+      if (isHaltedState(currentSnap.state)) {
+        stopAutoPlay();
+      }
+    }
+
+    function resetMachine() {
+      initMachine();
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        stopAutoPlay();
+      } else {
+        if (isHaltedState(currentSnap.state)) {
+          initMachine();
+        }
+        isPlaying = true;
+        updatePlayButtonUI();
+        playTimer = setInterval(() => {
+          stepForward();
+        }, stepDelayMs);
+      }
+    }
+
+    function stopAutoPlay() {
+      isPlaying = false;
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      updatePlayButtonUI();
+    }
+
+    function updatePlayButtonUI() {
+      const iconPlay = document.getElementById('iconPlay');
+      const iconPause = document.getElementById('iconPause');
+      const label = document.getElementById('labelPlayPause');
+      const btn = document.getElementById('btnPlayPause');
+
+      if (isPlaying) {
+        iconPlay.classList.add('hidden');
+        iconPause.classList.remove('hidden');
+        label.textContent = 'Pause';
+        btn.classList.remove('bg-emerald-600', 'hover:bg-emerald-500');
+        btn.classList.add('bg-amber-600', 'hover:bg-amber-500');
+      } else {
+        iconPlay.classList.remove('hidden');
+        iconPause.classList.add('hidden');
+        label.textContent = 'Play';
+        btn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
+        btn.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+      }
+    }
+
+    function updateSpeed(val) {
+      const cfg = SPEED_MAP[val] || SPEED_MAP[3];
+      stepDelayMs = cfg.delay;
+      document.getElementById('speedLabel').textContent = cfg.label;
+      if (isPlaying) {
+        clearInterval(playTimer);
+        playTimer = setInterval(() => {
+          stepForward();
+        }, stepDelayMs);
+      }
+    }
+
+    /**
+     * Switches between the 5 algorithms and reconfigures inputs, presets, and headers
+     */
+    function switchMode(mode) {
+      if (!MODE_CONFIGS[mode]) return;
+      currentMode = mode;
+      const cfg = MODE_CONFIGS[mode];
+
+      // Update Tab Active Styles
+      Object.keys(MODE_CONFIGS).forEach(m => {
+        const tab = document.getElementById(`tab-${m}`);
+        if (m === mode) {
+          tab.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer bg-indigo-600 text-white shadow-sm';
+        } else {
+          tab.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-slate-400 hover:text-slate-200 hover:bg-slate-800/60';
+        }
+      });
+
+      // Update Tape Count Pill & Subtitle
+      document.getElementById('tapeCountPill').textContent = `${cfg.tapeCount}-Tape Model`;
+      document.getElementById('activeTapesSubtitle').textContent = `• ${cfg.tapeCount} Independent Read/Write Heads`;
+
+      // Configure Input Fields Visibility & Grid Spans
+      const in1Wrap = document.getElementById('input1Wrapper');
+      const opWrap = document.getElementById('operatorWrapper');
+      const in2Wrap = document.getElementById('input2Wrapper');
+      const sumWrap = document.getElementById('summaryWrapper');
+
+      document.getElementById('labelInput1').textContent = cfg.label1;
+      document.getElementById('inputField1').placeholder = cfg.placeholder1;
+      document.getElementById('inputField1').value = cfg.default1;
+
+      if (cfg.inputs === 2) {
+        in1Wrap.className = 'lg:col-span-3';
+        opWrap.className = 'hidden lg:flex lg:col-span-1 items-center justify-center pb-2';
+        in2Wrap.className = 'lg:col-span-3';
+        sumWrap.className = 'lg:col-span-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3';
+        document.getElementById('operatorSymbol').textContent = cfg.operator;
+        document.getElementById('labelInput2').textContent = cfg.label2;
+        document.getElementById('inputField2').placeholder = cfg.placeholder2;
+        document.getElementById('inputField2').value = cfg.default2;
+      } else {
+        in1Wrap.className = 'lg:col-span-5';
+        opWrap.className = 'hidden';
+        in2Wrap.className = 'hidden';
+        sumWrap.className = 'lg:col-span-7 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/90 border border-slate-800 rounded-xl p-3';
+      }
+
+      // Render Quick Presets
+      const presetContainer = document.getElementById('presetButtonsContainer');
+      presetContainer.innerHTML = cfg.presets.map((p, idx) => {
+        let badgeCls = 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700';
+        if (p.badge === 'accept') {
+          badgeCls = 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30';
+        } else if (p.badge === 'reject') {
+          badgeCls = 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/30';
+        }
+        return `
+          <button
+            type="button"
+            onclick="applyPreset(${idx})"
+            class="px-2 py-0.5 rounded-md border font-mono text-[11px] font-medium transition-colors cursor-pointer ${badgeCls}"
+          >
+            ${p.label}
+          </button>
+        `;
+      }).join('');
+
+      // Update Transition Table Column Headers for 2-Tape vs 3-Tape
+      loadInputs();
+    }
+
+    function applyPreset(idx) {
+      const preset = MODE_CONFIGS[currentMode].presets[idx];
+      if (!preset) return;
+      document.getElementById('inputField1').value = preset.v1;
+      if (MODE_CONFIGS[currentMode].inputs === 2) {
+        document.getElementById('inputField2').value = preset.v2;
+      }
+      loadInputs();
+    }
+
+    /**
+     * Validates user inputs according to the selected algorithm and updates target equation previews
+     */
+    function validateAndPreviewInputs() {
+      const cfg = MODE_CONFIGS[currentMode];
+      const raw1 = document.getElementById('inputField1').value.trim();
+      const raw2 = cfg.inputs === 2 ? document.getElementById('inputField2').value.trim() : '';
+      const banner = document.getElementById('validationBanner');
+      const msg = document.getElementById('validationMsg');
+
+      if (!raw1 || (cfg.inputs === 2 && !raw2)) {
+        banner.classList.remove('hidden');
+        msg.textContent = 'Input string cannot be empty.';
+        return false;
+      }
+
+      if (raw1.includes(BLANK) || raw2.includes(BLANK)) {
+        banner.classList.remove('hidden');
+        msg.textContent = 'Underscore "_" is reserved as the Turing Machine blank symbol.';
+        return false;
+      }
+
+      if (currentMode === 'binary') {
+        if (!/^[01]+$/.test(raw1) || !/^[01]+$/.test(raw2)) {
+          banner.classList.remove('hidden');
+          msg.textContent = 'Binary Addition only accepts digits 0 and 1.';
+          return false;
+        }
+        banner.classList.add('hidden');
+        const d1 = parseInt(raw1, 2);
+        const d2 = parseInt(raw2, 2);
+        const sum = d1 + d2;
+        document.getElementById('metaInput1').textContent = `= ${d1}`;
+        document.getElementById('metaInput2').textContent = `= ${d2}`;
+        document.getElementById('targetEquation').textContent = `${raw1} (${d1}) + ${raw2} (${d2}) = ${sum.toString(2)} (${sum})`;
+        return true;
+      }
+
+      if (currentMode === 'unary') {
+        if (!/^1+$/.test(raw1) || !/^1+$/.test(raw2)) {
+          banner.classList.remove('hidden');
+          msg.textContent = 'Unary Addition represents numbers using tallies of "1" (e.g. 111 = 3).';
+          return false;
+        }
+        banner.classList.add('hidden');
+        const d1 = raw1.length;
+        const d2 = raw2.length;
+        const sum = d1 + d2;
+        document.getElementById('metaInput1').textContent = `= ${d1}`;
+        document.getElementById('metaInput2').textContent = `= ${d2}`;
+        document.getElementById('targetEquation').textContent = `${raw1} (${d1}) + ${raw2} (${d2}) = ${'1'.repeat(sum)} (${sum})`;
+        return true;
+      }
+
+      if (currentMode === 'palindrome') {
+        if (!/^[a-zA-Z0-9]+$/.test(raw1)) {
+          banner.classList.remove('hidden');
+          msg.textContent = 'Use alphanumeric characters (e.g. radar, abba, 10101).';
+          return false;
+        }
+        banner.classList.add('hidden');
+        const reversed = raw1.split('').reverse().join('');
+        const isPal = raw1 === reversed;
+        document.getElementById('metaInput1').textContent = `len = ${raw1.length}`;
+        document.getElementById('targetEquation').textContent =
+          `Check "${raw1}" vs reverse "${reversed}" → Expected: ${isPal ? 'ACCEPT' : 'REJECT'}`;
+        return true;
+      }
+
+      if (currentMode === 'compare') {
+        if (!/^[a-zA-Z0-9]+$/.test(raw1) || !/^[a-zA-Z0-9]+$/.test(raw2)) {
+          banner.classList.remove('hidden');
+          msg.textContent = 'Use alphanumeric characters for both strings.';
+          return false;
+        }
+        banner.classList.add('hidden');
+        const isEq = raw1 === raw2;
+        document.getElementById('metaInput1').textContent = `len = ${raw1.length}`;
+        document.getElementById('metaInput2').textContent = `len = ${raw2.length}`;
+        document.getElementById('targetEquation').textContent =
+          `"${raw1}" == "${raw2}" → Expected: ${isEq ? 'ACCEPT' : 'REJECT'}`;
+        return true;
+      }
+
+      if (currentMode === 'copy') {
+        if (!/^[a-zA-Z0-9]+$/.test(raw1)) {
+          banner.classList.remove('hidden');
+          msg.textContent = 'Use alphanumeric characters for the source string.';
+          return false;
+        }
+        banner.classList.add('hidden');
+        document.getElementById('metaInput1').textContent = `len = ${raw1.length}`;
+        document.getElementById('targetEquation').textContent =
+          `Duplicate Tape 1 ("${raw1}") → Tape 2 ("${raw1}")`;
+        return true;
+      }
+
+      return true;
+    }
+
+    function loadInputs() {
+      if (!validateAndPreviewInputs()) return;
+      input1Str = document.getElementById('inputField1').value.trim();
+      input2Str = MODE_CONFIGS[currentMode].inputs === 2
+        ? document.getElementById('inputField2').value.trim()
+        : '';
+      initMachine();
+    }
+
+    document.getElementById('inputField1').addEventListener('input', validateAndPreviewInputs);
+    document.getElementById('inputField2').addEventListener('input', validateAndPreviewInputs);
+
+    /**
+     * Master UI Render Function
+     */
+    function renderAll() {
+      renderStateHeader(currentSnap);
+      renderTapes(currentSnap);
+      updateControlsState(currentSnap);
+      updateLiveOutputSummary(currentSnap);
+    }
+
+    function renderStateHeader(snap) {
+      const info = STATE_INFO[currentMode][snap.state] || {
+        title: snap.state,
+        desc: 'Executing transition...',
+        badgeClass: 'bg-slate-700 text-white'
+      };
+
+      const badge = document.getElementById('stateBadge');
+      badge.textContent = snap.state;
+      badge.className = `px-3.5 py-2 rounded-xl font-mono font-bold text-sm sm:text-base shadow-md shrink-0 transition-colors ${info.badgeClass}`;
+
+      document.getElementById('stateTitle').textContent = info.title;
+      document.getElementById('stateDescription').textContent = info.desc;
+      document.getElementById('stepCounter').textContent = stepCount;
+
+      // Decision Status Pill (Accept / Reject / Running)
+      const outcomeBadge = document.getElementById('outcomeBadge');
+      outcomeBadge.classList.remove('hidden');
+      if (snap.state === 'q_accept') {
+        outcomeBadge.textContent = '✓ ACCEPTED';
+        outcomeBadge.className = 'text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+      } else if (snap.state === 'q_reject') {
+        outcomeBadge.textContent = '✕ REJECTED';
+        outcomeBadge.className = 'text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40';
+      } else {
+        outcomeBadge.textContent = '● RUNNING';
+        outcomeBadge.className = 'text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+      }
+
+      // Active Transition Inspector Readouts
+      document.getElementById('inspState').textContent = snap.inspector.state;
+      document.getElementById('inspRead').textContent = snap.inspector.read;
+      document.getElementById('inspWrite').textContent = snap.inspector.write;
+      document.getElementById('inspMove').textContent = snap.inspector.move;
+      document.getElementById('inspNext').textContent = snap.inspector.next;
+
+      document.getElementById('liveActionReadout').textContent = snap.actionText;
+      document.getElementById('liveHeadCoords').textContent =
+        `Heads: ${snap.heads.map((pos, idx) => `H${idx + 1}[${pos}]`).join(', ')}`;
+    }
+
+    function updateControlsState(snap) {
+      document.getElementById('btnStepForward').disabled = isHaltedState(snap.state);
+    }
+
+    function extractTapeString(tapeObj) {
+      const chars = [];
+      for (let i = TAPE_MIN; i <= TAPE_MAX; i++) {
+        if (tapeObj[i] !== BLANK) chars.push(tapeObj[i]);
+      }
+      return chars.join('');
+    }
+
+    function updateLiveOutputSummary(snap) {
+      const el = document.getElementById('liveOutputSummary');
+      if (currentMode === 'binary') {
+        const str = extractTapeString(snap.tapes[2]);
+        el.textContent = str
+          ? `Tape 3 Sum: ${str} (Decimal: ${parseInt(str, 2)})`
+          : 'Tape 3 Sum: (empty)';
+      } else if (currentMode === 'unary') {
+        const str = extractTapeString(snap.tapes[2]);
+        el.textContent = str
+          ? `Tape 3 Sum: ${str} (Decimal: ${str.length})`
+          : 'Tape 3 Sum: (empty)';
+      } else if (currentMode === 'palindrome') {
+        const str2 = extractTapeString(snap.tapes[1]);
+        el.textContent = str2
+          ? `Tape 2 Mirror Buffer: "${str2}"`
+          : 'Tape 2 Mirror Buffer: (empty)';
+      } else if (currentMode === 'compare') {
+        el.textContent = snap.state === 'q_accept'
+          ? 'Result: Strings Match Exactly (ACCEPT)'
+          : snap.state === 'q_reject'
+          ? 'Result: Mismatch Detected (REJECT)'
+          : `Comparing Index ${snap.heads[0]}...`;
+      } else if (currentMode === 'copy') {
+        const str2 = extractTapeString(snap.tapes[1]);
+        el.textContent = str2
+          ? `Tape 2 Copied String: "${str2}"`
+          : 'Tape 2 Copied String: (empty)';
+      }
+    }
+
+    /**
+     * Renders the active tapes (2 or 3 tracks) with animated heads and write pulses
+     */
+    function renderTapes(snap) {
+      const container = document.getElementById('tapesContainer');
+      const cfg = MODE_CONFIGS[currentMode];
+      const tapeRoles = cfg.tapeRoles;
+
+      const maxLen = Math.max(input1Str.length, input2Str.length, 6);
+      const visibleStart = -2;
+      const visibleEnd = Math.max(12, maxLen + 4);
+
+      const moveBadges = {
+        L: { text: '← L', cls: 'bg-amber-500/15 text-amber-300 border-amber-500/35' },
+        R: { text: 'R →', cls: 'bg-sky-500/15 text-sky-300 border-sky-500/35' },
+        S: { text: '• S', cls: 'bg-slate-800 text-slate-400 border-slate-700' }
+      };
+
+      container.innerHTML = tapeRoles.map((roleInfo, tIdx) => {
+        const tapeData = snap.tapes[tIdx];
+        const headPos = snap.heads[tIdx];
+        const lastMove = snap.lastMoves[tIdx];
+        const wasWritten = snap.writtenFlags[tIdx];
+        const moveBadge = moveBadges[lastMove] || moveBadges.S;
+
+        // Distinguish primary write/output tape accent vs input tape accent
+        const isOutputTrack = (cfg.tapeCount === 3 && tIdx === 2) ||
+          ((currentMode === 'palindrome' || currentMode === 'copy') && tIdx === 1);
+
+        let cellsHtml = '';
+        for (let pos = visibleStart; pos <= visibleEnd; pos++) {
+          const sym = tapeData[pos] ?? BLANK;
+          const isHead = pos === headPos;
+          const isBlank = sym === BLANK;
+
+          let cellClasses = 'bg-slate-900 border-slate-800 text-slate-200';
+          if (isHead) {
+            if (snap.state === 'q_reject') {
+              cellClasses = 'bg-rose-500/20 border-rose-500 ring-2 ring-rose-500/30 text-rose-200 font-bold z-10';
+            } else if (isOutputTrack || snap.state === 'q_accept') {
+              cellClasses = 'bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/25 text-emerald-200 font-bold z-10';
+            } else {
+              cellClasses = 'bg-indigo-500/20 border-indigo-400 ring-2 ring-indigo-400/25 text-indigo-200 font-bold z-10';
+            }
+          } else if (isOutputTrack && !isBlank) {
+            cellClasses = 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 font-semibold';
+          } else if (isBlank) {
+            cellClasses = 'bg-slate-950/70 border-slate-800/70 text-slate-600';
+          }
+
+          // Highlight cell where symbol was just written before head moved
+          const prevPos = lastMove === 'L' ? headPos + 1 : lastMove === 'R' ? headPos - 1 : headPos;
+          const animateWrite = wasWritten && pos === prevPos
+            ? 'cell-just-written bg-emerald-500/25 border-emerald-400 text-emerald-200'
+            : '';
+
+          cellsHtml += `
+            <div class="flex flex-col items-center shrink-0">
+              <!-- Head Pointer Slot -->
+              <div class="h-6 flex items-center justify-center mb-1">
+                ${isHead ? `
+                  <div class="head-indicator flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold shadow-sm ${
+                    snap.state === 'q_reject'
+                      ? 'bg-rose-600 text-white'
+                      : isOutputTrack
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-indigo-600 text-white'
+                  }">
+                    <span>H${tIdx + 1}</span>
+                    <span>▼</span>
+                  </div>
+                ` : `<span class="text-[10px] font-mono text-slate-600">${pos}</span>`}
+              </div>
+
+              <!-- Tape Cell -->
+              <div class="tape-cell w-10 h-11 sm:w-11 sm:h-12 rounded-xl border-2 flex items-center justify-center font-mono text-base sm:text-lg select-none ${cellClasses} ${animateWrite}">
+                ${sym}
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="bg-slate-950/80 rounded-xl border border-slate-800/90 p-3 sm:p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-md ${
+                  isOutputTrack
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                }">
+                  ${roleInfo.name}
+                </span>
+                <span class="text-xs font-semibold text-slate-300">${roleInfo.role}</span>
+              </div>
+
+              <div class="flex items-center gap-2 text-xs font-mono">
+                <span class="text-slate-400">
+                  Index: <strong class="text-slate-200">${headPos}</strong>
+                </span>
+                <span class="text-slate-400">
+                  Read: <strong class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-white">${tapeData[headPos] ?? BLANK}</strong>
+                </span>
+                <span class="px-2 py-0.5 rounded-md border font-semibold ${moveBadge.cls}">
+                  Move: ${moveBadge.text}
+                </span>
+              </div>
+            </div>
+
+            <!-- Horizontally scrollable cell track -->
+            <div class="overflow-x-auto pb-1">
+              <div class="flex items-center gap-1.5 min-w-max px-1">
+                ${cellsHtml}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Renders the Transition Function Table and highlights the active rule
+     */
+    function renderTransitionTable(snap) {
+      const rules = RULES_BY_MODE[currentMode];
+      document.getElementById('ruleCountBadge').textContent = `${rules.length} rules`;
+
+      const tbody = document.getElementById('transitionTableBody');
+      tbody.innerHTML = rules.map(rule => {
+        const isActive = rule.id === snap.matchedRuleId;
+        const isCurrentState = rule.state === snap.state && !snap.matchedRuleId;
+
+        let rowClass = 'hover:bg-slate-800/40 transition-colors';
+        if (isActive) {
+          rowClass = 'bg-indigo-500/15 text-indigo-100 font-semibold ring-1 ring-inset ring-indigo-500/40';
+        } else if (isCurrentState) {
+          rowClass = 'bg-slate-800/25';
+        }
+
+        const nextBadgeClass = rule.next === 'q_accept'
+          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+          : rule.next === 'q_reject'
+          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+          : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+
+        return `
+          <tr id="rule-row-${rule.id}" class="${rowClass}">
+            <td class="py-2 px-3">
+              <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 font-bold">${rule.state}</span>
+            </td>
+            <td class="py-2 px-2.5 text-center text-slate-300">(${rule.r.join(', ')})</td>
+            <td class="py-2 px-2 text-center text-slate-600">→</td>
+            <td class="py-2 px-3">
+              <span class="px-1.5 py-0.5 rounded font-bold ${nextBadgeClass}">${rule.next}</span>
+            </td>
+            <td class="py-2 px-2.5 text-center text-emerald-300">(${rule.w.join(', ')})</td>
+            <td class="py-2 px-2.5 text-center text-amber-300">(${rule.m.join(', ')})</td>
+            <td class="py-2 px-3 font-sans text-slate-400">${rule.label}</td>
+          </tr>
+        `;
+      }).join('');
+
+      if (snap.matchedRuleId) {
+        const activeRow = document.getElementById(`rule-row-${snap.matchedRuleId}`);
+        if (activeRow) {
+          activeRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    }
+
+    /**
+     * Renders the chronological execution history up to currentStepIndex
+     */
+    function renderTraceLog() {
+      const container = document.getElementById('traceLogContainer');
+      const visibleHistory = history.slice(0, currentStepIndex + 1).reverse();
+
+      container.innerHTML = visibleHistory.map((item, idx) => {
+        const isLatest = idx === 0;
+        const entry = item.logEntry;
+        return `
+          <div class="p-3 rounded-xl border text-xs transition-all ${
+            isLatest
+              ? 'bg-indigo-500/10 border-indigo-500/35 shadow-sm'
+              : 'bg-slate-950/60 border-slate-800/80 opacity-75'
+          }">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono font-bold ${isLatest ? 'text-indigo-300' : 'text-slate-400'}">
+                Step #${entry.step}
+              </span>
+              <span class="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                ${entry.state}
+              </span>
+            </div>
+            <div class="font-semibold text-slate-200 mb-0.5">${entry.summary}</div>
+            <div class="font-mono text-[11px] text-slate-400">${entry.detail}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    window.onload = function () {
+      switchMode('binary');
+    };
+  </script>
+</body>
+</html>
